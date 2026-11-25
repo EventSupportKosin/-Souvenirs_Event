@@ -1,0 +1,1094 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0" />
+  <title>สต็อกของชำร่วย Realtime Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Noto+Sans+Thai:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="https://unpkg.com/lucide@0.460.0/dist/umd/lucide.min.js"></script>
+  <style>
+    body {
+      font-family: 'Noto Sans Thai', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background-color: #f4f7fb;
+      color: #0f172a;
+      -webkit-font-smoothing: antialiased;
+    }
+    .num-font {
+      font-family: 'Inter', 'Noto Sans Thai', sans-serif;
+      font-variant-numeric: tabular-nums;
+    }
+    @keyframes pulse-ring {
+      0% { transform: scale(0.85); opacity: 0.9; }
+      70% { transform: scale(1.65); opacity: 0; }
+      100% { transform: scale(1.65); opacity: 0; }
+    }
+    .live-ring::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border-radius: 9999px;
+      background: currentColor;
+      animation: pulse-ring 2s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+    }
+    .card-hover {
+      transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
+    }
+    .card-hover:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 10px 24px -8px rgba(15, 76, 129, 0.14);
+    }
+    .spin-anim {
+      animation: spin 0.9s linear infinite;
+    }
+    @keyframes spin {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col">
+  <!-- Top Header -->
+  <header class="sticky top-0 z-30 bg-white/95 backdrop-blur border-b border-slate-200/80 shadow-xs">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 py-3.5 flex flex-wrap items-center justify-between gap-3">
+      <div class="flex items-center gap-3 min-w-0">
+        <div class="w-10 h-10 rounded-xl bg-[#0F4C81] text-white flex items-center justify-center shrink-0 shadow-sm">
+          <i data-lucide="gift" class="w-5 h-5"></i>
+        </div>
+        <div class="min-w-0">
+          <div class="flex items-center gap-2 flex-wrap">
+            <h1 class="text-base sm:text-lg font-bold text-slate-900 truncate">สต็อกของชำร่วยคงเหลือ</h1>
+            <span id="connectionBadge" class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+              <span class="relative inline-flex w-2 h-2 text-emerald-500 live-ring">
+                <span class="relative inline-flex rounded-full w-2 h-2 bg-emerald-500"></span>
+              </span>
+              <span id="connectionText">กำลังเชื่อมต่อ Realtime...</span>
+            </span>
+          </div>
+          <p class="text-xs text-slate-500 mt-0.5 truncate">
+            อัปเดตล่าสุด: <span id="lastSyncText" class="font-medium text-slate-700 num-font">—</span>
+            <span id="countdownWrap" class="ml-1.5 text-slate-400 num-font">(รีเฟรชใน <span id="countdownText">30</span> วิ)</span>
+          </p>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-2 flex-wrap">
+        <div class="flex items-center gap-1.5 bg-slate-100 rounded-lg px-2.5 py-1.5 border border-slate-200/80">
+          <i data-lucide="clock" class="w-3.5 h-3.5 text-slate-500"></i>
+          <label for="refreshIntervalSelect" class="sr-only">รอบรีเฟรชอัตโนมัติ</label>
+          <select id="refreshIntervalSelect" class="bg-transparent text-xs font-medium text-slate-700 focus:outline-none cursor-pointer">
+            <option value="15">ทุก 15 วิ</option>
+            <option value="30" selected>ทุก 30 วิ</option>
+            <option value="60">ทุก 1 นาที</option>
+            <option value="0">ปิดรีเฟรชอัตโนมัติ</option>
+          </select>
+        </div>
+
+        <button id="refreshBtn" type="button" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#0F4C81] hover:bg-[#0c3d68] active:scale-[0.98] text-white text-xs sm:text-sm font-semibold shadow-xs transition cursor-pointer">
+          <i id="refreshIcon" data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
+          <span>รีเฟรช</span>
+        </button>
+
+        <a href="https://docs.google.com/spreadsheets/d/1imep7KHEeT_i-iurBBVqhKSaGcT4d2x1qXldGMvg46g/edit?gid=142781723#gid=142781723" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 text-xs sm:text-sm font-medium transition" title="เปิด Google Sheet ต้นฉบับ">
+          <i data-lucide="external-link" class="w-3.5 h-3.5 text-slate-500"></i>
+          <span class="hidden sm:inline">Google Sheet</span>
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Content -->
+  <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 py-5 space-y-5">
+    <!-- Notice Banner (shown only if live fetch falls back to snapshot) -->
+    <div id="fallbackBanner" class="hidden rounded-xl bg-amber-50 border border-amber-200 px-4 py-3 flex items-start justify-between gap-3 text-xs sm:text-sm text-amber-900">
+      <div class="flex items-start gap-2.5">
+        <i data-lucide="wifi-off" class="w-4 h-4 text-amber-600 mt-0.5 shrink-0"></i>
+        <p id="fallbackBannerText">ยังไม่สามารถดึงข้อมูลสดจาก Google Sheets ได้ในขณะนี้ กำลังแสดงยอดคงเหลือจากข้อมูลสแนปช็อตล่าสุด — กดปุ่ม “รีเฟรช” เพื่อลองเชื่อมต่อใหม่</p>
+      </div>
+      <button id="dismissBannerBtn" type="button" class="text-amber-700 hover:text-amber-900 p-1 rounded-md cursor-pointer shrink-0" aria-label="ปิดการแจ้งเตือน">
+        <i data-lucide="x" class="w-4 h-4"></i>
+      </button>
+    </div>
+
+    <!-- KPI Cards -->
+    <section aria-label="สรุปยอดคงเหลือ" class="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+      <button type="button" data-kpi-filter="all" class="kpi-card text-left bg-white rounded-2xl p-4 border border-slate-200/90 shadow-xs card-hover cursor-pointer focus:outline-none">
+        <div class="flex items-center justify-between gap-2">
+          <span class="text-xs font-semibold text-slate-500">รายการของชำร่วย</span>
+          <span class="w-8 h-8 rounded-lg bg-blue-50 text-[#0F4C81] flex items-center justify-center">
+            <i data-lucide="package" class="w-4 h-4"></i>
+          </span>
+        </div>
+        <div class="mt-2.5 flex items-baseline gap-1.5">
+          <span id="kpiTotalItems" class="text-2xl sm:text-3xl font-extrabold text-slate-900 num-font">0</span>
+          <span class="text-xs font-medium text-slate-500">รายการ</span>
+        </div>
+      </button>
+
+      <button type="button" data-kpi-filter="all" class="kpi-card text-left bg-white rounded-2xl p-4 border border-slate-200/90 shadow-xs card-hover cursor-pointer focus:outline-none">
+        <div class="flex items-center justify-between gap-2">
+          <span class="text-xs font-semibold text-slate-500">ยอดคงเหลือรวม</span>
+          <span class="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-700 flex items-center justify-center">
+            <i data-lucide="layers" class="w-4 h-4"></i>
+          </span>
+        </div>
+        <div class="mt-2.5 flex items-baseline gap-1.5">
+          <span id="kpiTotalQty" class="text-2xl sm:text-3xl font-extrabold text-[#0F4C81] num-font">0</span>
+          <span class="text-xs font-medium text-slate-500">ชิ้น</span>
+        </div>
+      </button>
+
+      <button type="button" data-kpi-filter="normal" class="kpi-card text-left bg-white rounded-2xl p-4 border border-slate-200/90 shadow-xs card-hover cursor-pointer focus:outline-none">
+        <div class="flex items-center justify-between gap-2">
+          <span class="text-xs font-semibold text-slate-500">สต็อกปกติ (&gt;20)</span>
+          <span class="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center">
+            <i data-lucide="check-circle-2" class="w-4 h-4"></i>
+          </span>
+        </div>
+        <div class="mt-2.5 flex items-baseline gap-1.5">
+          <span id="kpiNormalCount" class="text-2xl sm:text-3xl font-extrabold text-emerald-600 num-font">0</span>
+          <span class="text-xs font-medium text-slate-500">รายการ</span>
+        </div>
+      </button>
+
+      <button type="button" data-kpi-filter="low_or_out" class="kpi-card text-left bg-white rounded-2xl p-4 border border-slate-200/90 shadow-xs card-hover cursor-pointer focus:outline-none">
+        <div class="flex items-center justify-between gap-2">
+          <span class="text-xs font-semibold text-slate-500">ใกล้หมด / หมด (≤20)</span>
+          <span class="w-8 h-8 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center">
+            <i data-lucide="alert-triangle" class="w-4 h-4"></i>
+          </span>
+        </div>
+        <div class="mt-2.5 flex items-baseline gap-1.5">
+          <span id="kpiAlertCount" class="text-2xl sm:text-3xl font-extrabold text-amber-600 num-font">0</span>
+          <span class="text-xs font-medium text-slate-500">รายการ</span>
+        </div>
+      </button>
+    </section>
+
+    <!-- Chart Section -->
+    <section class="bg-white rounded-2xl border border-slate-200/90 shadow-xs overflow-hidden">
+      <div class="px-4 sm:px-5 py-3.5 border-b border-slate-100 flex items-center justify-between gap-3">
+        <div class="flex items-center gap-2 min-w-0">
+          <i data-lucide="bar-chart-3" class="w-4 h-4 text-[#0F4C81] shrink-0"></i>
+          <h2 class="text-sm sm:text-base font-bold text-slate-800 truncate">กราฟเปรียบเทียบยอดคงเหลือแต่ละรายการ</h2>
+        </div>
+        <button id="toggleChartBtn" type="button" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold text-slate-600 hover:bg-slate-100 transition cursor-pointer shrink-0">
+          <i id="toggleChartIcon" data-lucide="chevron-up" class="w-4 h-4"></i>
+          <span id="toggleChartText">ซ่อนกราฟ</span>
+        </button>
+      </div>
+      <div id="chartBody" class="p-4 sm:p-5">
+        <div class="flex items-center gap-4 text-xs text-slate-500 mb-3 flex-wrap">
+          <span class="inline-flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-sm bg-emerald-500"></span>สต็อกปกติ (&gt;20 ชิ้น)</span>
+          <span class="inline-flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-sm bg-amber-500"></span>ใกล้หมด (1–20 ชิ้น)</span>
+          <span class="inline-flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-sm bg-rose-500"></span>หมดสต็อก (0 ชิ้น)</span>
+        </div>
+        <div class="relative h-80 sm:h-96 w-full">
+          <canvas id="stockChart"></canvas>
+        </div>
+      </div>
+    </section>
+
+    <!-- Search, Filter & Sort Controls -->
+    <section class="bg-white rounded-2xl border border-slate-200/90 shadow-xs p-3.5 sm:p-4 space-y-3">
+      <div class="flex flex-col md:flex-row gap-3">
+        <!-- Search Input -->
+        <div class="relative flex-1">
+          <i data-lucide="search" class="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none"></i>
+          <input id="searchInput" type="search" placeholder="ค้นหาชื่อของชำร่วย หรือรหัสสินค้า (เช่น แก้วน้ำ, ปากกา, STORZ)..." class="w-full pl-10 pr-9 py-2 rounded-xl border border-slate-200 bg-slate-50/70 focus:bg-white focus:border-[#0F4C81] focus:ring-2 focus:ring-[#0F4C81]/15 text-sm text-slate-800 outline-none transition" />
+          <button id="clearSearchBtn" type="button" class="hidden absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1 cursor-pointer" aria-label="ล้างคำค้นหา">
+            <i data-lucide="x" class="w-4 h-4"></i>
+          </button>
+        </div>
+
+        <!-- Sort + View Toggle -->
+        <div class="flex items-center gap-2 shrink-0">
+          <div class="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 flex-1 md:flex-initial">
+            <i data-lucide="arrow-up-down" class="w-3.5 h-3.5 text-slate-500 shrink-0"></i>
+            <label for="sortSelect" class="sr-only">เรียงลำดับ</label>
+            <select id="sortSelect" class="bg-transparent text-xs sm:text-sm font-medium text-slate-700 focus:outline-none cursor-pointer w-full">
+              <option value="sheet_order">เรียงตามชีต</option>
+              <option value="qty_asc">คงเหลือ: น้อย → มาก</option>
+              <option value="qty_desc">คงเหลือ: มาก → น้อย</option>
+              <option value="name_asc">ชื่อสินค้า: ก → ฮ</option>
+            </select>
+          </div>
+
+          <div class="inline-flex rounded-xl bg-slate-100 p-1 border border-slate-200/80 shrink-0" role="group" aria-label="รูปแบบการแสดงผล">
+            <button id="viewGridBtn" type="button" class="px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer bg-white text-[#0F4C81] shadow-xs">
+              <i data-lucide="layout-grid" class="w-3.5 h-3.5"></i>
+              <span class="hidden sm:inline">การ์ด</span>
+            </button>
+            <button id="viewTableBtn" type="button" class="px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer text-slate-600 hover:text-slate-900">
+              <i data-lucide="table-2" class="w-3.5 h-3.5"></i>
+              <span class="hidden sm:inline">ตาราง</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Filter Pills & Count -->
+      <div class="flex items-center justify-between gap-3 flex-wrap pt-1">
+        <div class="flex items-center gap-1.5 flex-wrap" id="statusFilterGroup">
+          <button type="button" data-filter="all" class="filter-pill px-3 py-1.5 rounded-full text-xs font-semibold transition cursor-pointer bg-[#0F4C81] text-white">
+            ทั้งหมด
+          </button>
+          <button type="button" data-filter="normal" class="filter-pill px-3 py-1.5 rounded-full text-xs font-semibold transition cursor-pointer bg-slate-100 text-slate-700 hover:bg-slate-200">
+            สต็อกปกติ (&gt;20)
+          </button>
+          <button type="button" data-filter="low_or_out" class="filter-pill px-3 py-1.5 rounded-full text-xs font-semibold transition cursor-pointer bg-slate-100 text-slate-700 hover:bg-slate-200">
+            ใกล้หมด / หมด (≤20)
+          </button>
+          <button type="button" data-filter="out" class="filter-pill px-3 py-1.5 rounded-full text-xs font-semibold transition cursor-pointer bg-slate-100 text-slate-700 hover:bg-slate-200">
+            หมดสต็อก (0)
+          </button>
+        </div>
+        <p class="text-xs text-slate-500">
+          แสดง <span id="filteredCount" class="font-bold text-slate-800 num-font">0</span> จาก <span id="allCount" class="font-semibold text-slate-700 num-font">0</span> รายการ
+          (รวม <span id="filteredQty" class="font-bold text-[#0F4C81] num-font">0</span> ชิ้น)
+        </p>
+      </div>
+    </section>
+
+    <!-- Grid View -->
+    <section id="gridContainer" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3.5 sm:gap-4" aria-label="รายการของชำร่วยแบบการ์ด"></section>
+
+    <!-- Table View -->
+    <section id="tableContainer" class="hidden bg-white rounded-2xl border border-slate-200/90 shadow-xs overflow-hidden" aria-label="รายการของชำร่วยแบบตาราง">
+      <div class="overflow-x-auto">
+        <table class="w-full text-left border-collapse">
+          <thead>
+            <tr class="bg-slate-50/90 border-b border-slate-200 text-xs font-semibold text-slate-500 uppercase tracking-wider">
+              <th class="py-3 px-4 w-12 text-center">#</th>
+              <th class="py-3 px-4">สินค้าของชำร่วย</th>
+              <th class="py-3 px-4 text-right">คงเหลือ</th>
+              <th class="py-3 px-4 text-center">สถานะ</th>
+              <th class="py-3 px-4 text-right hidden md:table-cell">อัปเดตล่าสุด</th>
+            </tr>
+          </thead>
+          <tbody id="tableBody" class="divide-y divide-slate-100 text-sm"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Empty State -->
+    <section id="emptyState" class="hidden bg-white rounded-2xl border border-slate-200/90 p-10 text-center space-y-2">
+      <div class="w-12 h-12 rounded-2xl bg-slate-100 text-slate-400 mx-auto flex items-center justify-center">
+        <i data-lucide="search-x" class="w-6 h-6"></i>
+      </div>
+      <h3 class="text-base font-bold text-slate-800">ไม่พบรายการที่ตรงกับเงื่อนไข</h3>
+      <p class="text-xs sm:text-sm text-slate-500">ลองเปลี่ยนคำค้นหาหรือล้างตัวกรองสถานะเพื่อดูสินค้าทั้งหมด</p>
+      <button id="resetFiltersBtn" type="button" class="mt-2 inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#0F4C81] text-white text-xs font-semibold hover:bg-[#0c3d68] transition cursor-pointer">
+        แสดงรายการทั้งหมด
+      </button>
+    </section>
+  </main>
+
+  <!-- Footer -->
+  <footer class="mt-auto border-t border-slate-200/80 bg-white/80 py-3.5 px-4 sm:px-6 text-center text-xs text-slate-500">
+    <div class="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2">
+      <span>ระบบดูยอดคงเหลือของชำร่วยแบบ Realtime (อ่านอย่างเดียว)</span>
+      <span>แหล่งข้อมูล: Event Stock list Database • แท็บ ของชำร่วย Realtime</span>
+    </div>
+  </footer>
+
+  <!-- Item Detail Modal -->
+  <div id="itemModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+    <div class="bg-white rounded-2xl max-w-md w-full overflow-hidden shadow-2xl border border-slate-200">
+      <div class="relative bg-slate-100 aspect-[4/3] w-full flex items-center justify-center overflow-hidden">
+        <img id="modalImg" src="" alt="" class="w-full h-full object-contain bg-white" />
+        <div id="modalImgFallback" class="hidden flex-col items-center justify-center text-slate-400 gap-2 p-6">
+          <i data-lucide="gift" class="w-12 h-12"></i>
+          <span class="text-xs">ไม่มีรูปภาพสินค้า</span>
+        </div>
+        <button id="closeModalBtn" type="button" class="absolute top-3 right-3 w-8 h-8 rounded-full bg-slate-900/70 hover:bg-slate-900 text-white flex items-center justify-center transition cursor-pointer" aria-label="ปิดหน้าต่าง">
+          <i data-lucide="x" class="w-4 h-4"></i>
+        </button>
+        <span id="modalStatusBadge" class="absolute top-3 left-3 px-2.5 py-1 rounded-full text-xs font-bold shadow-xs"></span>
+      </div>
+      <div class="p-5 space-y-4">
+        <div>
+          <p id="modalItemId" class="text-xs font-semibold text-slate-400 num-font"></p>
+          <h3 id="modalTitle" class="text-lg font-bold text-slate-900 mt-0.5 leading-snug"></h3>
+        </div>
+        <div class="rounded-xl bg-slate-50 border border-slate-200/80 p-4 flex items-center justify-between">
+          <div>
+            <p class="text-xs font-medium text-slate-500">ยอดคงเหลือปัจจุบัน</p>
+            <p id="modalUpdated" class="text-xs text-slate-400 mt-0.5"></p>
+          </div>
+          <div class="text-right">
+            <span id="modalQty" class="text-3xl font-extrabold num-font">0</span>
+            <span class="text-sm font-semibold text-slate-500 ml-1">ชิ้น</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const SHEET_ID = '1imep7KHEeT_i-iurBBVqhKSaGcT4d2x1qXldGMvg46g';
+    const REALTIME_GID = '142781723';
+    const LOW_STOCK_THRESHOLD = 20;
+
+    // Grounded snapshot from Event Stock list Database (2026-11-24) used as instant initial render & offline fallback
+    const SNAPSHOT_ITEMS = [
+      { id: 'EVT-9A135059', name: 'ปากกา เพนเทล (Pentel) สกรีนโลโก้ STORZ', qty: 244, fileId: '1vSekO19zqVHjKNJ2Z2qg9Z81FX1NYV7P', lastUpdated: '24/11/2026 08:46', order: 0 },
+      { id: 'EVT-7F23E262', name: 'แก้วน้ำ STORZ สีน้ำเงิน', qty: 432, fileId: '1BBV4hve4w5RZ7VOqn20YfF9d-gdaLa1z', lastUpdated: '23/11/2026 09:27', order: 1 },
+      { id: 'EVT-CFA2B5B0', name: 'แก้วน้ำ STORZ สีขาว', qty: 429, fileId: '1Lt3KYUqho4KTRkdw7O70tcFjajXlvDdH', lastUpdated: '23/11/2026 09:27', order: 2 },
+      { id: 'EVT-9519C739', name: 'หมวกสครัป STORZ สีดำ', qty: 3, fileId: '1K8jGJgBEXVRgCnXKcbD3HTSE2W8Mp2Ri', lastUpdated: '11/11/2026 18:11', order: 3 },
+      { id: 'EVT-1D9CA324', name: 'หมวกสครัป STORZ สีน้ำเงิน', qty: 12, fileId: '1gw6zoEhjgq0RSZOG9UVWQVhz9ZiqMGIZ', lastUpdated: '11/11/2026 18:11', order: 4 },
+      { id: 'EVT-BC16BE6D', name: 'แก้วแสตนเลส STORZ สีกรม', qty: 30, fileId: '1Ovh8cD4O1QB8yyqt7AoHH0XtsTNrupw4', lastUpdated: '16/11/2026 16:57', order: 5 },
+      { id: 'EVT-5A0B6C6D', name: 'แก้วแสตนเลส STORZ สีขาว', qty: 40, fileId: '1V85ga82QwqDLqZKFPy_ssf68A5DA050E', lastUpdated: '16/11/2026 16:57', order: 6 },
+      { id: 'EVT-2835E78D', name: 'กระบอกน้ำแสตนเลส STORZ', qty: 43, fileId: '1Ex-gJcQM6LZcywGhNWsN7GjPz2SpOhfp', lastUpdated: '21/11/2026 14:58', order: 7 },
+      { id: 'EVT-D1429015', name: 'นาฬิกา STORZ', qty: 31, fileId: '1F-_qA5JnSABPuDer4VFepbnjE1bkwRrP', lastUpdated: '16/11/2026 16:57', order: 8 },
+      { id: 'EVT-0CCEFB36', name: 'ร่ม STORZ', qty: 90, fileId: '1tsg2do7drhs3-nzt20IB8PKEwb6JaP2w', lastUpdated: '23/11/2026 09:27', order: 9 },
+      { id: 'EVT-FD4F9AEB', name: 'หน้ากากอนามัย STORZ', qty: 69, fileId: '1PyBUYzWhoDtagZfDCjk4NUXw9lLB2zWD', lastUpdated: '09/11/2026 13:43', order: 10 },
+      { id: 'EVT-8FF822F9', name: 'กล่องไม้ STORZ', qty: 28, fileId: '1vAuI1Yb0F0jVScJJ6SYdgKpoIbPXWVgW', lastUpdated: '09/11/2026 13:42', order: 11 },
+      { id: 'EVT-D091CD65', name: 'จานรองแก้ว STORZ', qty: 10, fileId: '1f0ULdu89cs0cMcVBY3coAicMPz02OtPS', lastUpdated: '09/11/2026 13:42', order: 12 },
+      { id: 'EVT-96C84B16', name: 'โหล Image 1', qty: 14, fileId: '1NZTz-5dvGdPOozon2THWigxCE-_iyAkg', lastUpdated: '09/11/2026 13:43', order: 13 },
+      { id: 'EVT-A2F4A068', name: 'ถุงกระดาษใส่ของชำร่วย STORZ', qty: 37, fileId: '11orXatmbVrBVDc2lAIjl3NhPSrb_BKw7', lastUpdated: '09/11/2026 13:42', order: 14 },
+      { id: 'EVT-A5FE856A', name: 'กระเป๋าผ้า PU สีดำ', qty: 238, fileId: '1YFdW29CjZ5hWBeaXeSD3F2d-FH3WEgT3', lastUpdated: '18/11/2026 14:35', order: 15 },
+      { id: 'EVT-6A1E9D12', name: 'กระเป๋าผ้า PU สีม่วง', qty: 18, fileId: '1nIwKzuLfwVd4nT5fss8fVPb6TAQT1VwY', lastUpdated: '18/11/2026 14:35', order: 16 },
+      { id: 'EVT-16B6DFC8', name: 'กระเป๋าผ้า PU สีกรมแดง', qty: 236, fileId: '17NIcd-Gmp5eP5Nr9hMxuIhwusMLagiEg', lastUpdated: '18/11/2026 14:35', order: 17 }
+    ];
+
+    const state = {
+      items: SNAPSHOT_ITEMS.map(item => ({ ...item })),
+      searchQuery: '',
+      statusFilter: 'all',
+      sortBy: 'sheet_order',
+      viewMode: 'grid',
+      showChart: true,
+      refreshIntervalSec: 30,
+      countdownSec: 30,
+      isLive: false,
+      isLoading: false,
+      lastSyncText: 'สแนปช็อต 24/11/2026',
+      bannerDismissed: false,
+      selectedItemId: null
+    };
+
+    let chartInstance = null;
+    let pollTimerId = null;
+
+    // Load saved view preference safely
+    try {
+      const savedView = localStorage.getItem('souvenir_view_mode');
+      if (savedView === 'grid' || savedView === 'table') state.viewMode = savedView;
+      const rawInterval = localStorage.getItem('souvenir_refresh_sec');
+      if (rawInterval !== null) {
+        const savedInterval = Number(rawInterval);
+        if ([0, 15, 30, 60].includes(savedInterval)) {
+          state.refreshIntervalSec = savedInterval;
+          state.countdownSec = savedInterval;
+        }
+      }
+    } catch (e) {}
+
+    // Helpers
+    function escapeHtml(str) {
+      return String(str || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    function getStatusInfo(qty) {
+      const n = Number(qty) || 0;
+      if (n <= 0) {
+        return {
+          key: 'out',
+          label: 'หมดสต็อก',
+          badgeClass: 'bg-rose-50 text-rose-700 border border-rose-200',
+          qtyClass: 'text-rose-600',
+          barColor: '#ef4444'
+        };
+      }
+      if (n <= LOW_STOCK_THRESHOLD) {
+        return {
+          key: 'low',
+          label: 'ใกล้หมด',
+          badgeClass: 'bg-amber-50 text-amber-700 border border-amber-200',
+          qtyClass: 'text-amber-600',
+          barColor: '#f59e0b'
+        };
+      }
+      return {
+        key: 'normal',
+        label: 'สต็อกปกติ',
+        badgeClass: 'bg-emerald-50 text-emerald-700 border border-emerald-200',
+        qtyClass: 'text-emerald-600',
+        barColor: '#10b981'
+      };
+    }
+
+    function getThumbUrl(fileId, size) {
+      if (!fileId) return '';
+      return `https://drive.google.com/thumbnail?id=${encodeURIComponent(fileId)}&sz=w${size || 400}`;
+    }
+
+    function getFallbackUrl(fileId) {
+      if (!fileId) return '';
+      return `https://lh3.googleusercontent.com/d/${encodeURIComponent(fileId)}`;
+    }
+
+    function formatNowThai() {
+      const now = new Date();
+      const dd = String(now.getDate()).padStart(2, '0');
+      const mm = String(now.getMonth() + 1).padStart(2, '0');
+      const yyyy = now.getFullYear();
+      const hh = String(now.getHours()).padStart(2, '0');
+      const mi = String(now.getMinutes()).padStart(2, '0');
+      const ss = String(now.getSeconds()).padStart(2, '0');
+      return `${dd}/${mm}/${yyyy} ${hh}:${mi}:${ss}`;
+    }
+
+    function formatGvizDate(cell) {
+      if (!cell) return '';
+      if (cell.f) return String(cell.f);
+      if (typeof cell.v === 'string' && cell.v.startsWith('Date(')) {
+        const parts = cell.v.slice(5, -1).split(',').map(Number);
+        if (parts.length >= 3) {
+          const d = new Date(parts[0], parts[1], parts[2], parts[3] || 0, parts[4] || 0);
+          const dd = String(d.getDate()).padStart(2, '0');
+          const mm = String(d.getMonth() + 1).padStart(2, '0');
+          const hh = String(d.getHours()).padStart(2, '0');
+          const mi = String(d.getMinutes()).padStart(2, '0');
+          return `${dd}/${mm}/${d.getFullYear()} ${hh}:${mi}`;
+        }
+      }
+      return cell.v ? String(cell.v) : '';
+    }
+
+    function parseGvizResponse(text) {
+      const start = text.indexOf('{');
+      const end = text.lastIndexOf('}');
+      if (start === -1 || end === -1) throw new Error('Invalid gviz payload');
+      const parsed = JSON.parse(text.slice(start, end + 1));
+      if (!parsed.table || !Array.isArray(parsed.table.rows)) {
+        throw new Error('Missing table rows');
+      }
+      return parsed.table.rows;
+    }
+
+    async function fetchLiveSheetData() {
+      if (state.isLoading) return;
+      state.isLoading = true;
+      updateConnectionUI();
+
+      const ts = Date.now();
+      const realtimeUrl = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:json&gid=${REALTIME_GID}&_ts=${ts}`;
+      const stockQuery = encodeURIComponent("select A,B,C,D,E,G,H where H contains 'ของชำร่วย'");
+      const stockUrl = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:json&sheet=Stock&tq=${stockQuery}&_ts=${ts}`;
+
+      // Build snapshot metadata map so Drive File IDs remain available even if only realtime tab responds
+      const metaMap = new Map();
+      SNAPSHOT_ITEMS.forEach(item => {
+        metaMap.set(item.id, { fileId: item.fileId, lastUpdated: item.lastUpdated });
+      });
+
+      try {
+        const [rtRes, stRes] = await Promise.allSettled([
+          fetch(realtimeUrl, { method: 'GET', cache: 'no-store' }).then(r => {
+            if (!r.ok) throw new Error('RT HTTP ' + r.status);
+            return r.text();
+          }),
+          fetch(stockUrl, { method: 'GET', cache: 'no-store' }).then(r => {
+            if (!r.ok) throw new Error('Stock HTTP ' + r.status);
+            return r.text();
+          })
+        ]);
+
+        let stockRows = [];
+        if (stRes.status === 'fulfilled') {
+          try {
+            stockRows = parseGvizResponse(stRes.value);
+            stockRows.forEach(row => {
+              const c = row.c || [];
+              const id = c[0] && c[0].v ? String(c[0].v).trim() : '';
+              if (!id || id === 'Item ID') return;
+              let fileId = c[4] && c[4].v ? String(c[4].v).trim() : '';
+              if (!fileId && c[3] && c[3].v) {
+                const match = String(c[3].v).match(/\/d\/([a-zA-Z0-9_-]+)/);
+                if (match) fileId = match[1];
+              }
+              const lastUpdated = formatGvizDate(c[5]);
+              metaMap.set(id, {
+                fileId: fileId || (metaMap.get(id) ? metaMap.get(id).fileId : ''),
+                lastUpdated: lastUpdated || (metaMap.get(id) ? metaMap.get(id).lastUpdated : '')
+              });
+            });
+          } catch (e) {}
+        }
+
+        let liveItems = [];
+        if (rtRes.status === 'fulfilled') {
+          const rows = parseGvizResponse(rtRes.value);
+          rows.forEach((row, idx) => {
+            const c = row.c || [];
+            const id = c[0] && c[0].v != null ? String(c[0].v).trim() : '';
+            const name = c[1] && c[1].v != null ? String(c[1].v).trim() : '';
+            const rawQty = c[2] && c[2].v != null ? Number(c[2].v) : NaN;
+            if (!name || id === 'Item ID' || Number.isNaN(rawQty)) return;
+            const meta = metaMap.get(id) || { fileId: '', lastUpdated: '' };
+            liveItems.push({
+              id: id || `ITEM-${idx + 1}`,
+              name,
+              qty: Math.max(0, Math.round(rawQty)),
+              fileId: meta.fileId,
+              lastUpdated: meta.lastUpdated,
+              order: liveItems.length
+            });
+          });
+        }
+
+        // Fallback to Stock sheet rows if realtime tab returned empty
+        if (liveItems.length === 0 && stockRows.length > 0) {
+          stockRows.forEach((row, idx) => {
+            const c = row.c || [];
+            const id = c[0] && c[0].v != null ? String(c[0].v).trim() : '';
+            const name = c[1] && c[1].v != null ? String(c[1].v).trim() : '';
+            const rawQty = c[2] && c[2].v != null ? Number(c[2].v) : NaN;
+            if (!name || id === 'Item ID' || Number.isNaN(rawQty)) return;
+            const meta = metaMap.get(id) || { fileId: '', lastUpdated: '' };
+            liveItems.push({
+              id: id || `ITEM-${idx + 1}`,
+              name,
+              qty: Math.max(0, Math.round(rawQty)),
+              fileId: meta.fileId,
+              lastUpdated: meta.lastUpdated,
+              order: liveItems.length
+            });
+          });
+        }
+
+        if (liveItems.length > 0) {
+          state.items = liveItems;
+          state.isLive = true;
+          state.lastSyncText = formatNowThai();
+          document.getElementById('fallbackBanner').classList.add('hidden');
+        } else {
+          throw new Error('No live rows returned');
+        }
+      } catch (err) {
+        state.isLive = false;
+        if (!state.bannerDismissed) {
+          document.getElementById('fallbackBanner').classList.remove('hidden');
+        }
+      } finally {
+        state.isLoading = false;
+        if (state.refreshIntervalSec > 0) {
+          state.countdownSec = state.refreshIntervalSec;
+        }
+        updateConnectionUI();
+        renderAll();
+      }
+    }
+
+    function updateConnectionUI() {
+      const badge = document.getElementById('connectionBadge');
+      const text = document.getElementById('connectionText');
+      const syncEl = document.getElementById('lastSyncText');
+      const refreshIcon = document.getElementById('refreshIcon');
+      const countdownWrap = document.getElementById('countdownWrap');
+      const countdownText = document.getElementById('countdownText');
+
+      syncEl.textContent = state.lastSyncText;
+      if (state.isLoading) {
+        refreshIcon.classList.add('spin-anim');
+      } else {
+        refreshIcon.classList.remove('spin-anim');
+      }
+
+      if (state.isLive) {
+        badge.className = 'inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200';
+        badge.innerHTML = `<span class="relative inline-flex w-2 h-2 text-emerald-500 live-ring"><span class="relative inline-flex rounded-full w-2 h-2 bg-emerald-500"></span></span><span id="connectionText">${state.isLoading ? 'กำลังอัปเดต...' : 'LIVE • Realtime'}</span>`;
+      } else if (state.isLoading) {
+        badge.className = 'inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-50 text-[#0F4C81] border border-blue-200';
+        badge.innerHTML = `<span class="relative inline-flex w-2 h-2 rounded-full bg-[#0F4C81]"></span><span id="connectionText">กำลังเชื่อมต่อ...</span>`;
+      } else {
+        badge.className = 'inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-50 text-amber-800 border border-amber-200';
+        badge.innerHTML = `<span class="relative inline-flex w-2 h-2 rounded-full bg-amber-500"></span><span id="connectionText">ข้อมูลสแนปช็อต</span>`;
+      }
+
+      if (state.refreshIntervalSec > 0) {
+        countdownWrap.classList.remove('hidden');
+        countdownText.textContent = String(state.countdownSec);
+      } else {
+        countdownWrap.classList.add('hidden');
+      }
+    }
+
+    function getFilteredAndSortedItems() {
+      const q = state.searchQuery.trim().toLowerCase();
+      const filtered = state.items.filter(item => {
+        if (q) {
+          const inName = item.name.toLowerCase().includes(q);
+          const inId = item.id.toLowerCase().includes(q);
+          if (!inName && !inId) return false;
+        }
+        const status = getStatusInfo(item.qty).key;
+        if (state.statusFilter === 'normal') return status === 'normal';
+        if (state.statusFilter === 'low_or_out') return status === 'low' || status === 'out';
+        if (state.statusFilter === 'out') return status === 'out';
+        return true;
+      });
+
+      const sorted = [...filtered];
+      if (state.sortBy === 'qty_asc') {
+        sorted.sort((a, b) => a.qty - b.qty || a.name.localeCompare(b.name, 'th'));
+      } else if (state.sortBy === 'qty_desc') {
+        sorted.sort((a, b) => b.qty - a.qty || a.name.localeCompare(b.name, 'th'));
+      } else if (state.sortBy === 'name_asc') {
+        sorted.sort((a, b) => a.name.localeCompare(b.name, 'th'));
+      } else {
+        sorted.sort((a, b) => a.order - b.order);
+      }
+      return sorted;
+    }
+
+    function renderKPIs() {
+      const totalItems = state.items.length;
+      const totalQty = state.items.reduce((sum, it) => sum + (Number(it.qty) || 0), 0);
+      const normalCount = state.items.filter(it => it.qty > LOW_STOCK_THRESHOLD).length;
+      const alertCount = state.items.filter(it => it.qty <= LOW_STOCK_THRESHOLD).length;
+
+      document.getElementById('kpiTotalItems').textContent = totalItems.toLocaleString('th-TH');
+      document.getElementById('kpiTotalQty').textContent = totalQty.toLocaleString('th-TH');
+      document.getElementById('kpiNormalCount').textContent = normalCount.toLocaleString('th-TH');
+      document.getElementById('kpiAlertCount').textContent = alertCount.toLocaleString('th-TH');
+    }
+
+    function renderFilterPills() {
+      const pills = document.querySelectorAll('.filter-pill');
+      pills.forEach(btn => {
+        const key = btn.getAttribute('data-filter');
+        if (key === state.statusFilter) {
+          btn.className = 'filter-pill px-3 py-1.5 rounded-full text-xs font-semibold transition cursor-pointer bg-[#0F4C81] text-white shadow-xs';
+        } else {
+          btn.className = 'filter-pill px-3 py-1.5 rounded-full text-xs font-semibold transition cursor-pointer bg-slate-100 text-slate-700 hover:bg-slate-200';
+        }
+      });
+
+      const gridBtn = document.getElementById('viewGridBtn');
+      const tableBtn = document.getElementById('viewTableBtn');
+      if (state.viewMode === 'grid') {
+        gridBtn.className = 'px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer bg-white text-[#0F4C81] shadow-xs';
+        tableBtn.className = 'px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer text-slate-600 hover:text-slate-900';
+      } else {
+        tableBtn.className = 'px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer bg-white text-[#0F4C81] shadow-xs';
+        gridBtn.className = 'px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer text-slate-600 hover:text-slate-900';
+      }
+    }
+
+    function renderChart(items) {
+      const chartBody = document.getElementById('chartBody');
+      const toggleText = document.getElementById('toggleChartText');
+      const toggleIcon = document.getElementById('toggleChartIcon');
+
+      if (!state.showChart) {
+        chartBody.classList.add('hidden');
+        toggleText.textContent = 'แสดงกราฟ';
+        toggleIcon.setAttribute('data-lucide', 'chevron-down');
+        if (window.lucide) lucide.createIcons();
+        return;
+      }
+
+      chartBody.classList.remove('hidden');
+      toggleText.textContent = 'ซ่อนกราฟ';
+      toggleIcon.setAttribute('data-lucide', 'chevron-up');
+      if (window.lucide) lucide.createIcons();
+
+      const canvas = document.getElementById('stockChart');
+      if (!canvas || typeof Chart === 'undefined') return;
+
+      const chartItems = [...items].sort((a, b) => b.qty - a.qty);
+      const labels = chartItems.map(it => it.name.length > 26 ? it.name.slice(0, 26) + '…' : it.name);
+      const data = chartItems.map(it => it.qty);
+      const colors = chartItems.map(it => getStatusInfo(it.qty).barColor);
+
+      if (chartInstance) {
+        chartInstance.data.labels = labels;
+        chartInstance.data.datasets[0].data = data;
+        chartInstance.data.datasets[0].backgroundColor = colors;
+        chartInstance.update('none');
+        return;
+      }
+
+      chartInstance = new Chart(canvas.getContext('2d'), {
+        type: 'bar',
+        data: {
+          labels,
+          datasets: [{
+            label: 'ยอดคงเหลือ (ชิ้น)',
+            data,
+            backgroundColor: colors,
+            borderRadius: 6,
+            maxBarThickness: 22
+          }]
+        },
+        options: {
+          indexAxis: 'y',
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              backgroundColor: '#0f172a',
+              titleFont: { family: "'Noto Sans Thai', 'Inter', sans-serif", size: 12 },
+              bodyFont: { family: "'Noto Sans Thai', 'Inter', sans-serif", size: 12 },
+              callbacks: {
+                title: (ctx) => {
+                  const idx = ctx[0].dataIndex;
+                  return chartItems[idx] ? chartItems[idx].name : '';
+                },
+                label: (ctx) => ` คงเหลือ: ${Number(ctx.raw).toLocaleString('th-TH')} ชิ้น`
+              }
+            }
+          },
+          scales: {
+            x: {
+              beginAtZero: true,
+              grid: { color: '#f1f5f9' },
+              ticks: {
+                color: '#64748b',
+                font: { family: "'Inter', sans-serif", size: 11 }
+              }
+            },
+            y: {
+              grid: { display: false },
+              ticks: {
+                color: '#334155',
+                font: { family: "'Noto Sans Thai', 'Inter', sans-serif", size: 11 }
+              }
+            }
+          }
+        }
+      });
+    }
+
+    function attachImageFallback(imgEl) {
+      imgEl.addEventListener('error', function onErr() {
+        const step = imgEl.getAttribute('data-fallback-step') || '0';
+        const fallbackUrl = imgEl.getAttribute('data-fallback-url') || '';
+        if (step === '0' && fallbackUrl) {
+          imgEl.setAttribute('data-fallback-step', '1');
+          imgEl.src = fallbackUrl;
+        } else {
+          imgEl.classList.add('hidden');
+          const placeholder = imgEl.nextElementSibling;
+          if (placeholder) placeholder.classList.remove('hidden');
+        }
+      });
+    }
+
+    function renderList(items) {
+      const gridEl = document.getElementById('gridContainer');
+      const tableWrap = document.getElementById('tableContainer');
+      const tableBody = document.getElementById('tableBody');
+      const emptyEl = document.getElementById('emptyState');
+
+      const filteredQty = items.reduce((s, it) => s + (Number(it.qty) || 0), 0);
+      document.getElementById('filteredCount').textContent = items.length.toLocaleString('th-TH');
+      document.getElementById('allCount').textContent = state.items.length.toLocaleString('th-TH');
+      document.getElementById('filteredQty').textContent = filteredQty.toLocaleString('th-TH');
+
+      if (items.length === 0) {
+        gridEl.classList.add('hidden');
+        tableWrap.classList.add('hidden');
+        emptyEl.classList.remove('hidden');
+        return;
+      }
+
+      emptyEl.classList.add('hidden');
+      const maxQty = Math.max(...state.items.map(it => it.qty), 1);
+
+      if (state.viewMode === 'grid') {
+        tableWrap.classList.add('hidden');
+        gridEl.classList.remove('hidden');
+        gridEl.innerHTML = items.map(item => {
+          const st = getStatusInfo(item.qty);
+          const pct = Math.min(100, Math.max(item.qty > 0 ? 4 : 0, Math.round((item.qty / maxQty) * 100)));
+          const thumb = getThumbUrl(item.fileId, 400);
+          const fallback = getFallbackUrl(item.fileId);
+          return `
+            <article data-item-id="${escapeHtml(item.id)}" class="item-trigger bg-white rounded-2xl border border-slate-200/90 shadow-xs overflow-hidden flex flex-col card-hover cursor-pointer">
+              <div class="relative aspect-[4/3] bg-slate-50 border-b border-slate-100 flex items-center justify-center overflow-hidden">
+                ${thumb ? `<img src="${escapeHtml(thumb)}" data-fallback-url="${escapeHtml(fallback)}" alt="${escapeHtml(item.name)}" loading="lazy" class="stock-thumb w-full h-full object-contain p-2 bg-white" />` : ''}
+                <div class="${thumb ? 'hidden' : 'flex'} flex-col items-center justify-center text-slate-300 gap-1.5 w-full h-full bg-slate-50">
+                  <i data-lucide="gift" class="w-10 h-10"></i>
+                  <span class="text-[11px] font-medium text-slate-400">ของชำร่วย</span>
+                </div>
+                <span class="absolute top-2.5 right-2.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold shadow-xs ${st.badgeClass}">
+                  ${st.label}
+                </span>
+              </div>
+              <div class="p-3.5 sm:p-4 flex-1 flex flex-col justify-between gap-3">
+                <div>
+                  <p class="text-[11px] font-medium text-slate-400 num-font">${escapeHtml(item.id)}</p>
+                  <h3 class="text-sm font-bold text-slate-800 mt-0.5 line-clamp-2 leading-snug">${escapeHtml(item.name)}</h3>
+                </div>
+                <div class="space-y-2">
+                  <div class="flex items-baseline justify-between gap-2">
+                    <span class="text-xs font-medium text-slate-500">คงเหลือ</span>
+                    <div class="flex items-baseline gap-1">
+                      <span class="text-2xl font-extrabold num-font ${st.qtyClass}">${item.qty.toLocaleString('th-TH')}</span>
+                      <span class="text-xs font-semibold text-slate-500">ชิ้น</span>
+                    </div>
+                  </div>
+                  <div class="w-full h-1.5 rounded-full bg-slate-100 overflow-hidden">
+                    <div class="h-full rounded-full transition-all duration-300" style="width:${pct}%; background-color:${st.barColor};"></div>
+                  </div>
+                  ${item.lastUpdated ? `<p class="text-[11px] text-slate-400 num-font text-right">อัปเดต ${escapeHtml(item.lastUpdated)}</p>` : ''}
+                </div>
+              </div>
+            </article>
+          `;
+        }).join('');
+      } else {
+        gridEl.classList.add('hidden');
+        tableWrap.classList.remove('hidden');
+        tableBody.innerHTML = items.map((item, idx) => {
+          const st = getStatusInfo(item.qty);
+          const thumb = getThumbUrl(item.fileId, 160);
+          const fallback = getFallbackUrl(item.fileId);
+          return `
+            <tr data-item-id="${escapeHtml(item.id)}" class="item-trigger hover:bg-blue-50/40 transition cursor-pointer">
+              <td class="py-3 px-4 text-center text-xs font-semibold text-slate-400 num-font">${idx + 1}</td>
+              <td class="py-3 px-4">
+                <div class="flex items-center gap-3 min-w-0">
+                  <div class="w-11 h-11 rounded-xl border border-slate-200/80 bg-white overflow-hidden shrink-0 flex items-center justify-center">
+                    ${thumb ? `<img src="${escapeHtml(thumb)}" data-fallback-url="${escapeHtml(fallback)}" alt="${escapeHtml(item.name)}" loading="lazy" class="stock-thumb w-full h-full object-contain p-0.5" />` : ''}
+                    <div class="${thumb ? 'hidden' : 'flex'} items-center justify-center text-slate-300 w-full h-full bg-slate-50">
+                      <i data-lucide="gift" class="w-5 h-5"></i>
+                    </div>
+                  </div>
+                  <div class="min-w-0">
+                    <p class="font-bold text-slate-800 text-sm leading-snug">${escapeHtml(item.name)}</p>
+                    <p class="text-[11px] text-slate-400 num-font">${escapeHtml(item.id)}</p>
+                  </div>
+                </div>
+              </td>
+              <td class="py-3 px-4 text-right whitespace-nowrap">
+                <span class="text-lg font-extrabold num-font ${st.qtyClass}">${item.qty.toLocaleString('th-TH')}</span>
+                <span class="text-xs font-medium text-slate-500 ml-1">ชิ้น</span>
+              </td>
+              <td class="py-3 px-4 text-center whitespace-nowrap">
+                <span class="inline-flex px-2.5 py-0.5 rounded-full text-xs font-bold ${st.badgeClass}">${st.label}</span>
+              </td>
+              <td class="py-3 px-4 text-right text-xs text-slate-400 num-font whitespace-nowrap hidden md:table-cell">
+                ${escapeHtml(item.lastUpdated || '—')}
+              </td>
+            </tr>
+          `;
+        }).join('');
+      }
+
+      document.querySelectorAll('.stock-thumb').forEach(attachImageFallback);
+      document.querySelectorAll('.item-trigger').forEach(el => {
+        el.addEventListener('click', () => openItemModal(el.getAttribute('data-item-id')));
+      });
+
+      if (window.lucide) lucide.createIcons();
+    }
+
+    function openItemModal(itemId) {
+      const item = state.items.find(it => it.id === itemId);
+      if (!item) return;
+      state.selectedItemId = itemId;
+
+      const st = getStatusInfo(item.qty);
+      const modal = document.getElementById('itemModal');
+      const img = document.getElementById('modalImg');
+      const fb = document.getElementById('modalImgFallback');
+      const badge = document.getElementById('modalStatusBadge');
+
+      document.getElementById('modalItemId').textContent = item.id;
+      document.getElementById('modalTitle').textContent = item.name;
+      const qtyEl = document.getElementById('modalQty');
+      qtyEl.textContent = item.qty.toLocaleString('th-TH');
+      qtyEl.className = `text-3xl font-extrabold num-font ${st.qtyClass}`;
+      document.getElementById('modalUpdated').textContent = item.lastUpdated ? `อัปเดตล่าสุด: ${item.lastUpdated}` : 'ข้อมูลจากชีตของชำร่วย Realtime';
+
+      badge.textContent = st.label;
+      badge.className = `absolute top-3 left-3 px-2.5 py-1 rounded-full text-xs font-bold shadow-xs ${st.badgeClass}`;
+
+      const thumbUrl = getThumbUrl(item.fileId, 800);
+      const fallbackUrl = getFallbackUrl(item.fileId);
+      img.setAttribute('data-fallback-step', '0');
+      img.setAttribute('data-fallback-url', fallbackUrl);
+      if (thumbUrl) {
+        img.classList.remove('hidden');
+        fb.classList.add('hidden');
+        fb.classList.remove('flex');
+        img.src = thumbUrl;
+        img.alt = item.name;
+      } else {
+        img.classList.add('hidden');
+        fb.classList.remove('hidden');
+        fb.classList.add('flex');
+      }
+
+      modal.classList.remove('hidden');
+      if (window.lucide) lucide.createIcons();
+    }
+
+    function closeItemModal() {
+      state.selectedItemId = null;
+      document.getElementById('itemModal').classList.add('hidden');
+    }
+
+    function renderAll() {
+      renderKPIs();
+      renderFilterPills();
+      const filtered = getFilteredAndSortedItems();
+      renderChart(filtered);
+      renderList(filtered);
+    }
+
+    function startPollingTimer() {
+      if (pollTimerId) {
+        clearInterval(pollTimerId);
+        pollTimerId = null;
+      }
+      if (state.refreshIntervalSec <= 0) {
+        updateConnectionUI();
+        return;
+      }
+      state.countdownSec = state.refreshIntervalSec;
+      updateConnectionUI();
+      pollTimerId = setInterval(() => {
+        if (document.hidden) return;
+        state.countdownSec -= 1;
+        if (state.countdownSec <= 0) {
+          state.countdownSec = state.refreshIntervalSec;
+          fetchLiveSheetData();
+        } else {
+          const el = document.getElementById('countdownText');
+          if (el) el.textContent = String(state.countdownSec);
+        }
+      }, 1000);
+    }
+
+    // Event Listeners
+    document.addEventListener('DOMContentLoaded', () => {
+      const refreshIntervalSelect = document.getElementById('refreshIntervalSelect');
+      refreshIntervalSelect.value = String(state.refreshIntervalSec);
+      refreshIntervalSelect.addEventListener('change', (e) => {
+        state.refreshIntervalSec = Number(e.target.value) || 0;
+        try { localStorage.setItem('souvenir_refresh_sec', String(state.refreshIntervalSec)); } catch (err) {}
+        startPollingTimer();
+      });
+
+      document.getElementById('refreshBtn').addEventListener('click', () => {
+        fetchLiveSheetData();
+      });
+
+      document.getElementById('dismissBannerBtn').addEventListener('click', () => {
+        state.bannerDismissed = true;
+        document.getElementById('fallbackBanner').classList.add('hidden');
+      });
+
+      const searchInput = document.getElementById('searchInput');
+      const clearSearchBtn = document.getElementById('clearSearchBtn');
+      searchInput.addEventListener('input', (e) => {
+        state.searchQuery = e.target.value;
+        clearSearchBtn.classList.toggle('hidden', !state.searchQuery);
+        renderAll();
+      });
+
+      clearSearchBtn.addEventListener('click', () => {
+        state.searchQuery = '';
+        searchInput.value = '';
+        clearSearchBtn.classList.add('hidden');
+        renderAll();
+      });
+
+      document.getElementById('sortSelect').addEventListener('change', (e) => {
+        state.sortBy = e.target.value;
+        renderAll();
+      });
+
+      document.getElementById('viewGridBtn').addEventListener('click', () => {
+        state.viewMode = 'grid';
+        try { localStorage.setItem('souvenir_view_mode', 'grid'); } catch (err) {}
+        renderAll();
+      });
+
+      document.getElementById('viewTableBtn').addEventListener('click', () => {
+        state.viewMode = 'table';
+        try { localStorage.setItem('souvenir_view_mode', 'table'); } catch (err) {}
+        renderAll();
+      });
+
+      document.getElementById('toggleChartBtn').addEventListener('click', () => {
+        state.showChart = !state.showChart;
+        renderAll();
+      });
+
+      document.querySelectorAll('.filter-pill').forEach(btn => {
+        btn.addEventListener('click', () => {
+          state.statusFilter = btn.getAttribute('data-filter') || 'all';
+          renderAll();
+        });
+      });
+
+      document.querySelectorAll('.kpi-card').forEach(card => {
+        card.addEventListener('click', () => {
+          const targetFilter = card.getAttribute('data-kpi-filter') || 'all';
+          state.statusFilter = targetFilter;
+          renderAll();
+        });
+      });
+
+      document.getElementById('resetFiltersBtn').addEventListener('click', () => {
+        state.searchQuery = '';
+        state.statusFilter = 'all';
+        searchInput.value = '';
+        clearSearchBtn.classList.add('hidden');
+        renderAll();
+      });
+
+      const modalImg = document.getElementById('modalImg');
+      modalImg.addEventListener('error', () => {
+        const step = modalImg.getAttribute('data-fallback-step') || '0';
+        const fallbackUrl = modalImg.getAttribute('data-fallback-url') || '';
+        if (step === '0' && fallbackUrl) {
+          modalImg.setAttribute('data-fallback-step', '1');
+          modalImg.src = fallbackUrl;
+        } else {
+          modalImg.classList.add('hidden');
+          const fb = document.getElementById('modalImgFallback');
+          fb.classList.remove('hidden');
+          fb.classList.add('flex');
+        }
+      });
+
+      document.getElementById('closeModalBtn').addEventListener('click', closeItemModal);
+      document.getElementById('itemModal').addEventListener('click', (e) => {
+        if (e.target.id === 'itemModal') closeItemModal();
+      });
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && state.selectedItemId) closeItemModal();
+      });
+
+      // Refresh immediately when tab returns to foreground
+      document.addEventListener('visibilitychange', () => {
+        if (!document.hidden && state.refreshIntervalSec > 0) {
+          fetchLiveSheetData();
+        }
+      });
+
+      if (window.lucide) lucide.createIcons();
+      renderAll();
+      fetchLiveSheetData();
+      startPollingTimer();
+    });
+  </script>
+</body>
+</html>
